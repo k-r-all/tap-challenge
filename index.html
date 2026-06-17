@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>10秒連打バトル</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #ffffff;
+            text-align: center;
+            transition: background-color 0.3s;
+            user-select: none;
+            -webkit-user-select: none;
+            padding: 15px 0;
+            box-sizing: border-box;
+        }
+
+        /* 画面を上・中・下に綺麗に分割するレイアウト */
+        .header-zone {
+            height: 130px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        h1 { font-size: 2rem; color: #333; margin: 5px 0; }
+        #timer { font-size: 1.6rem; color: #ff3300; font-weight: bold; height: 2rem; }
+        #counter { font-size: 2.6rem; color: #333; font-weight: bold; height: 3rem; margin-top: 5px; }
+        
+        /* 中央：巨大連打ボタン専用エリア（位置を動かさない） */
+        .main-zone {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+        #hitBtn {
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff9900, #ff3300);
+            color: white;
+            font-size: 2.2rem;
+            font-weight: bold;
+            border: 6px solid #fff;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            outline: none;
+            transition: transform 0.05s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #hitBtn:active {
+            transform: scale(0.9);
+            background: linear-gradient(135deg, #ffaa11, #ff4411);
+        }
+        #hitBtn:disabled {
+            background: #cccccc;
+            border-color: #eeeeee;
+            box-shadow: none;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 下部：結果ボード＆スタートボタンエリア（連打位置から完全に離す） */
+        .footer-zone {
+            height: 220px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+        #startBtn { font-size: 1.6rem; padding: 15px 40px; border-radius: 50px; background: #007bff; color: white; border: none; cursor: pointer; font-weight: bold; box-shadow: 0 5px 10px rgba(0,0,0,0.1); }
+
+        .diag {
+            padding: 15px 20px;
+            border: 6px double #ccc;
+            border-radius: 24px;
+            width: 85%;
+            max-width: 400px;
+            background-color: #ffffff;
+            display: none;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+            box-sizing: border-box;
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.7); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .eval { font-size: 2.2rem; font-weight: bold; margin: 0 0 10px 0; line-height: 1.3; }
+        .diag h2 { font-size: 1.7rem; color: #333; margin: 0; font-weight: bold; line-height: 1.4; }
+    </style>
+</head>
+<body>
+
+    <!-- 上部エリア -->
+    <div class="header-zone">
+        <h1 id="msg">連打バトル！</h1>
+        <div id="timer"></div>
+        <div id="counter"></div>
+    </div>
+
+    <!-- 中央エリア（連打ボタン） -->
+    <div class="main-zone">
+        <button id="hitBtn" onclick="tap()" disabled>ここを<br>たたいて！</button>
+    </div>
+
+    <!-- 下部エリア（結果・スタート） -->
+    <div class="footer-zone">
+        <button id="startBtn" onclick="startCountdown()">スタート</button>
+
+        <div id="diag" class="diag">
+            <div id="eval" class="eval"></div>
+            <h2 id="diag-text">結果をスタッフに<br>見せに来てね！</h2>
+        </div>
+    </div>
+
+    <script>
+        const ua = navigator.userAgent.toLowerCase();
+        const isAuUq = ua.includes("kddi") || ua.includes("au") || ua.includes("uqmobile");
+        const diag = document.getElementById("diag");
+        const evalText = document.getElementById("eval");
+
+        if (isAuUq) {
+            document.body.style.backgroundColor = "#fff4ee";
+            diag.style.borderColor = "#ff6600";
+            document.getElementById("diag-text").style.color = "#ff6600";
+        } else {
+            diag.style.borderColor = "#333333";
+            document.getElementById("diag-text").style.color = "#333333";
+        }
+
+        let count = 0;
+        let timeLeft = 10;
+        let timerId = null;
+        let isPlaying = false;
+
+        async function startCountdown() {
+            document.getElementById('startBtn').style.display = 'none';
+            diag.style.display = 'none';
+            document.getElementById('counter').innerText = '';
+            document.getElementById('timer').innerText = '';
+            count = 0;
+
+            let countdown = 3;
+            while (countdown > 0) {
+                document.getElementById('msg').innerText = countdown + " ...";
+                await new Promise(r => setTimeout(r, 1000));
+                countdown--;
+            }
+
+            document.getElementById('msg').innerText = 'たたけーーー！！';
+            document.getElementById('counter').innerText = '0 回';
+            document.getElementById('hitBtn').disabled = false;
+            isPlaying = true;
+            timeLeft = 10;
+            document.getElementById('timer').innerText = '残り時間: ' + timeLeft.toFixed(1) + '秒';
+
+            const startTime = Date.now();
+            timerId = setInterval(() => {
+                let elapsed = (Date.now() - startTime) / 1000;
+                timeLeft = 10 - elapsed;
+
+                if (timeLeft <= 0) {
+                    timeLeft = 0;
+                    clearInterval(timerId);
+                    endGame();
+                }
+                document.getElementById('timer').innerText = '残り時間: ' + timeLeft.toFixed(1) + '秒';
+            }, 100);
+        }
+
+        function tap() {
+            if (!isPlaying) return;
+            count++;
+            document.getElementById('counter').innerText = count + ' 回';
+        }
+
+        function endGame() {
+            isPlaying = false;
+            document.getElementById('hitBtn').disabled = true;
+            document.getElementById('msg').innerText = 'タイムアップ！';
+
+            if (count >= 60) {
+                evalText.innerHTML = "👑 超人レベル！ 🎉<br><span style='font-size:1.6rem; color:#333;'>10秒で " + count + "回連打！</span>";
+                evalText.style.color = "#ff3300";
+            } else if (count >= 40) {
+                evalText.innerHTML = "🎉 すごい！ 🥇<br><span style='font-size:1.6rem; color:#333;'>10秒で " + count + "回連打！</span>";
+                evalText.style.color = "#ff3300";
+            } else {
+                evalText.innerHTML = "✨ ナイスファイト！ 🔥<br><span style='font-size:1.6rem; color:#333;'>10秒で " + count + "回連打！</span>";
+                evalText.style.color = "#0066cc";
+            }
+
+            // 【誤タップ防止】0.8秒（800ミリ秒）待ってから、一番下のリトライとボードを出す
+            setTimeout(() => {
+                document.getElementById('startBtn').style.display = 'block';
+                document.getElementById('startBtn').innerText = 'もう一回挑戦';
+                diag.style.display = 'block';
+            }, 800);
+        }
+    </script>
+</body>
+</html>
