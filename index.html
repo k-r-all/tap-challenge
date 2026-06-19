@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <!-- ズーム防止を仕込んだviewport設定 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>10秒連打バトル</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #ffffff;
+            text-align: center;
+            transition: background-color 0.3s;
+            -webkit-user-select: none;
+            user-select: none;
+            
+            /* 【重要】画面全体の上下スクロールや引っ張り挙動を完全に禁止 */
+            overflow: hidden;
+            touch-action: none;
+        }
+        h1 { font-size: 2rem; color: #333; margin: 5px 0; }
+        #timer { font-size: 2.2rem; font-weight: bold; color: #ff3300; margin: 10px 0; }
+        #counter { font-size: 3.5rem; font-weight: bold; color: #333; margin: 10px 0; }
+        
+        /* 連打ボタン（スマホで絶対にズーム・スクロールさせない設定） */
+        #hitBtn {
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            background: #ff3300;
+            color: white;
+            font-size: 2.8rem;
+            font-weight: bold;
+            border: none;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            cursor: pointer;
+            display: none; /* 最初は非表示 */
+            align-items: center;
+            justify-content: center;
+            
+            /* 【重要】ボタン単体でもスマホのズーム機能を徹底的にシャットアウト */
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent; /* タップしたときの青い影を消す */
+        }
+        
+        #startBtn { font-size: 1.6rem; padding: 15px 40px; border-radius: 50px; background: #007bff; color: white; border: none; cursor: pointer; margin-top: 10px; font-weight: bold; box-shadow: 0 5px 10px rgba(0,0,0,0.1); }
+
+        /* スタッフ誘導エリア（au/UQなら太いオレンジ枠） */
+        .diag {
+            margin-top: 15px;
+            padding: 25px 20px;
+            border: 6px double #ccc;
+            border-radius: 24px;
+            width: 85%;
+            max-width: 400px;
+            background-color: #ffffff;
+            display: none;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+            box-sizing: border-box;
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.7); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .eval { font-size: 2.2rem; font-weight: bold; margin: 0 0 15px 0; line-height: 1.3; }
+        .diag h2 { font-size: 1.9rem; color: #333; margin: 0; font-weight: bold; line-height: 1.4; }
+    </style>
+</head>
+<body>
+
+    <h1 id="msg">10秒連打バトル！</h1>
+    <div id="timer">残り時間: 10.00秒</div>
+    <div id="counter">0 回</div>
+
+    <!-- 連打ボタン -->
+    <button id="hitBtn">叩け！！</button>
+
+    <button id="startBtn" onclick="startGame()">スタート</button>
+
+    <!-- スタッフ誘導エリア -->
+    <div id="diag" class="diag">
+        <div id="eval" class="eval"></div>
+        <h2 id="diag-text">結果をスタッフに<br>見せに来てね！</h2>
+    </div>
+
+    <script>
+        const ua = navigator.userAgent.toLowerCase();
+        const isAuUq = ua.includes("kddi") || ua.includes("au") || ua.includes("uqmobile");
+        const diag = document.getElementById("diag");
+        const evalText = document.getElementById("eval");
+        const startBtn = document.getElementById("startBtn");
+        const hitBtn = document.getElementById("hitBtn");
+        const timerElement = document.getElementById("timer");
+        const counterElement = document.getElementById("counter");
+
+        // 【キャリア判定】背景と結果画面の枠線を統一
+        if (isAuUq) {
+            document.body.style.backgroundColor = "#fff4ee";
+            diag.style.border = "6px solid #ff6600"; 
+            document.getElementById("diag-text").style.color = "#ff6600";
+        } else {
+            diag.style.border = "6px double #333333";
+            document.getElementById("diag-text").style.color = "#333333";
+        }
+
+        let count = 0;
+        let timeLeft = 1000; // 10秒 (10ミリ秒単位)
+        let timerInterval = null;
+        let isPlaying = false;
+        let canReplay = false; // 誤タップ防止用フラグ
+
+        // 【ズーム・スクロール完全対策】
+        // clickイベントではなく、画面に触れた瞬間に反応する pointerdown を使用
+        hitBtn.addEventListener('pointerdown', (e) => {
+            e.preventDefault(); // スマホの「ズーム」「スクロール」のデフォルト動作を完全に殺す
+            if (!isPlaying) return;
+            
+            count++;
+            counterElement.innerText = count + " 回";
+            
+            // ボタンがへこむ視覚効果
+            hitBtn.style.transform = "scale(0.95)";
+        });
+
+        hitBtn.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            hitBtn.style.transform = "scale(1)";
+        });
+        
+        // iOS（Safari）特有の「画面ダブルタップ拡大」をグローバルでも徹底的に弾く
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault(); // 0.3秒以内の連続タップ（ダブルタップ）を無効化
+            }
+            lastTouchEnd = now;
+        }, { passive: false });
+
+        // 指2本以上でのピンチズームや、画面全体の引っ張りスクロールもJS側で完全ブロック
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1) return; 
+            e.preventDefault();
+        }, { passive: false });
+
+
+        function startGame() {
+            // 誤タップ防止：終了直後にすぐ「もう一回」を連打で押しちゃうのを防ぐ
+            if (startBtn.innerText === 'もう一回挑戦' && !canReplay) return;
+
+            count = 0;
+            timeLeft = 1000;
+            isPlaying = true;
+            canReplay = false;
+            
+            counterElement.innerText = "0 回";
+            timerElement.innerText = "残り時間: 10.00秒";
+            document.getElementById('msg').innerText = 'ひたすら連打だーー！！';
+            
+            startBtn.style.display = 'none';
+            diag.style.display = 'none';
+            hitBtn.style.display = 'flex'; // 連打ボタンを表示
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                let sec = (timeLeft / 100).toFixed(2);
+                timerElement.innerText = `残り時間: ${sec}秒`;
+
+                if (timeLeft <= 0) {
+                    endGame();
+                }
+            }, 10);
+        }
+
+        function endGame() {
+            isPlaying = false;
+            clearInterval(timerInterval);
+            hitBtn.style.display = 'none'; // 連打ボタンを隠す
+            
+            timerElement.innerText = "タイムアップ！";
+            document.getElementById('msg').innerText = 'あなたの連打ランクは…';
+
+            // ランク評価
+            if (count >= 75) {
+                evalText.innerHTML = `👑 神速の達人級！ 🎉<br><span style='font-size:1.6rem; color:#333;'>記録：${count}回（秒間7.5連打以上！）</span>`;
+                evalText.style.color = "#ff3300";
+            } else if (count >= 55) {
+                evalText.innerHTML = `🥇 猛者級！ 🚀<br><span style='font-size:1.6rem; color:#333;'>記録：${count}回（素晴らしいスピード！）</span>`;
+                evalText.style.color = "#ff3300";
+            } else if (count >= 35) {
+                evalText.innerHTML = `✨ 一般市民級！ 👍<br><span style='font-size:1.6rem; color:#333;'>記録：${count}回（標準的な速さです）</span>`;
+                evalText.style.color = "#0066cc";
+            } else {
+                evalText.innerHTML = `🔥 のびしろ無限大！ 👀<br><span style='font-size:1.6rem; color:#333;'>記録：${count}回（次は本気を出そう！）</span>`;
+                evalText.style.color = "#666666";
+            }
+
+            // 【誤タップ防止機能】終了後、1.5秒間は「もう一回挑戦」ボタンを押せなくする
+            startBtn.style.display = 'block';
+            startBtn.innerText = 'もう一回挑戦';
+            startBtn.style.opacity = '0.5'; // 押せない間は半透明にする
+            
+            setTimeout(() => {
+                canReplay = true;
+                startBtn.style.opacity = '1'; // 1.5秒後に元に戻して押せるようにする
+            }, 1500);
+
+            diag.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
